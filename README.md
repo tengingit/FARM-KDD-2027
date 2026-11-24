@@ -12,9 +12,11 @@ Use Python 3.9 or later and a CUDA-enabled PyTorch installation. From this direc
 
 ```bash
 python -m pip install -r requirements.txt
-python main.py --dataset Edm
-python main.py --dataset BeLaE
+python main.py --dataset Edm -fc -fd
+python main.py --dataset BeLaE -fc -fd
 ```
+
+Both commands train FARM. For FARM-v, run `python main.py --dataset Edm -fc --output-dir results-farm-v` (use the same output directory for standalone evaluation). The `-fc` flag enables prototype regularization, and `-fd` selects LogSumExp aggregation across dimensions. Both flags default to off. Without either flag, training uses mean cross-entropy. Use `--tau` to set the LogSumExp temperature.
 
 Each command runs all ten predefined folds on CUDA and reports metrics for the final epoch. To run one fold at the full training settings, pass `--fold 0`. For CPU execution, pass `--device cpu`.
 

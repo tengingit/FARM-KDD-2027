@@ -29,7 +29,12 @@ def parse_args():
     parser.add_argument("--warmup", type=int, default=config.WARMUP_EPOCHS, help="Number of warm-up epochs")
     parser.add_argument("--batch-size", type=int, default=config.BATCH_SIZE, help="Batch size")
     parser.add_argument("--device", default=config.DEVICE, help="Compute device, such as cuda, cuda:0, or cpu")
+    parser.add_argument("-fd", "--fair_dimension", action="store_true", help="Aggregate dimension losses with LogSumExp")
+    parser.add_argument("-fc", "--fair_class", action="store_true", help="Enable prototype regularization")
+    parser.add_argument("-tau", "--tau", type=float, default=config.LSE_TEMPERATURE, help="LogSumExp temperature")
     args = parser.parse_args()
+    if args.fair_dimension and args.tau <= 0:
+        parser.error("LogSumExp temperature must be positive.")
     if args.epochs < 1 or args.batch_size < 1 or not 0 <= args.warmup <= args.epochs:
         parser.error("Use positive epochs and batch size, with warmup between zero and epochs.")
     if torch.device(args.device).type == "cuda" and not torch.cuda.is_available():
@@ -81,9 +86,13 @@ def train_fold(dataset, fold, device, args):
             cross_entropy = torch.stack([
                 F.cross_entropy(scores, y[:, j]) for j, scores in enumerate(logits)
             ])
-            dim_losses = cross_entropy + config.PROTOTYPE_WEIGHT * refinement(embeddings, y, epoch)
-            tau = config.LSE_TEMPERATURE
-            loss = torch.logsumexp(tau * dim_losses, dim=0) / tau
+            dim_losses = cross_entropy
+            if args.fair_class:
+                dim_losses = dim_losses + config.PROTOTYPE_WEIGHT * refinement(embeddings, y, epoch)
+            if args.fair_dimension:
+                loss = torch.logsumexp(args.tau * dim_losses, dim=0) / args.tau
+            else:
+                loss = dim_losses.mean()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -107,7 +116,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
 
     for fold in folds:
-        print(f"Training FARM on {args.dataset}, fold {fold}, device {args.device}", flush=True)
+        print(f"Training on {args.dataset}, fold {fold}, device {args.device}", flush=True)
         predictions = train_fold(dataset, fold, args.device, args)
         np.savetxt(output / f"fold{fold}_predictions.csv", predictions, fmt="%d", delimiter=",")
     evaluate_saved_predictions(args.dataset, dataset, output, args.fold)
